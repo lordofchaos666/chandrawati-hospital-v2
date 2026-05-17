@@ -1,0 +1,15 @@
+name = "chandrawati-bookings"
+main = "src/worker.js"
+compatibility_date = "2026-05-01"
+
+# CORS origin allowed for booking POSTs from the patient site
+# and admin dashboard fetches. Override with `vars` if you change hosting.
+[vars]
+ALLOWED_ORIGIN = "https://lordofchaos666.github.io"
+
+# D1 database binding. The database_id is filled in by `deploy.sh`
+# after `wrangler d1 create` returns it.
+[[d1_databases]]
+binding = "DB"
+database_name = "chandrawati-bookings"
+database_id = "REPLACE_WITH_D1_ID"

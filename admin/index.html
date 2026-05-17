@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chandrawati Hospital — Bookings Admin</title>
+<style>
+  :root {
+    --navy: #0f2549;
+    --navy-2: #14305c;
+    --teal: #0e7490;
+    --gold: #c08a3e;
+    --bg: #f6f5f0;
+    --card: #ffffff;
+    --border: #e4e2dc;
+    --text: #1c1c1e;
+    --text-mid: #4a4a52;
+    --text-dim: #8a8a95;
+    --danger: #b91c1c;
+    --ok: #047857;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+  }
+  header {
+    background: var(--navy);
+    color: #fff;
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    margin: 0;
+    font-size: 1.15rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  header .sub {
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.6);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    margin-top: 3px;
+  }
+  header .actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  button, .btn {
+    appearance: none;
+    border: 1px solid var(--border);
+    background: var(--card);
+    color: var(--text);
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  button:hover, .btn:hover { background: #f0eee8; }
+  button.primary, .btn.primary {
+    background: var(--teal);
+    border-color: var(--teal);
+    color: #fff;
+  }
+  button.primary:hover, .btn.primary:hover { background: #0c5e75; }
+  button.ghost {
+    background: transparent;
+    border-color: rgba(255,255,255,0.25);
+    color: #fff;
+  }
+  button.ghost:hover { background: rgba(255,255,255,0.08); }
+
+  main { padding: 24px 28px 80px; max-width: 1400px; margin: 0 auto; }
+
+  /* Login card */
+  .login-wrap {
+    min-height: calc(100vh - 200px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .login-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 36px 32px;
+    max-width: 380px;
+    width: 100%;
+    box-shadow: 0 10px 30px rgba(15, 37, 73, 0.06);
+  }
+  .login-card h2 {
+    margin: 0 0 6px;
+    font-size: 1.1rem;
+    font-weight: 600;
+  }
+  .login-card p {
+    margin: 0 0 22px;
+    color: var(--text-mid);
+    font-size: 0.9rem;
+  }
+  .login-card input[type="password"] {
+    width: 100%;
+    padding: 11px 13px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  .login-card input[type="password"]:focus { border-color: var(--teal); }
+  .login-card button { width: 100%; justify-content: center; margin-top: 14px; padding: 11px 14px; }
+  .login-error {
+    color: var(--danger);
+    font-size: 0.85rem;
+    margin-top: 12px;
+    display: none;
+  }
+
+  /* Stats */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  .stat {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .stat-label {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+  .stat-value {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-top: 4px;
+    color: var(--navy);
+  }
+  .stat-sub {
+    font-size: 0.8rem;
+    color: var(--text-mid);
+    margin-top: 2px;
+  }
+
+  /* Controls */
+  .controls {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .controls .group {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    font-size: 0.85rem;
+    color: var(--text-mid);
+  }
+  .controls input[type="text"],
+  .controls input[type="date"],
+  .controls select {
+    padding: 7px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: var(--bg);
+  }
+  .controls input[type="text"] { width: 220px; }
+
+  /* Department sections */
+  .dept-section { margin-bottom: 28px; }
+  .dept-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid var(--border);
+  }
+  .dept-name {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--navy);
+  }
+  .dept-count {
+    background: var(--teal);
+    color: #fff;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 2px 9px;
+    border-radius: 99px;
+  }
+  .dept-count.zero { background: var(--text-dim); }
+
+  /* Table */
+  .table-wrap {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow-x: auto;
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.88rem;
+  }
+  th, td {
+    padding: 11px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  th {
+    background: #faf9f5;
+    font-weight: 600;
+    color: var(--text-mid);
+    font-size: 0.74rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    position: sticky;
+    top: 0;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr.today { background: #fffbeb; }
+  tr.today td:first-child::before {
+    content: '●';
+    color: var(--gold);
+    margin-right: 6px;
+  }
+  .token {
+    font-family: 'SF Mono', Menlo, monospace;
+    font-weight: 700;
+    color: var(--teal);
+  }
+  .empty {
+    padding: 28px;
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 0.9rem;
+  }
+  .loading {
+    padding: 60px;
+    text-align: center;
+    color: var(--text-mid);
+  }
+
+  @media (max-width: 640px) {
+    header { padding: 14px 16px; }
+    main { padding: 16px; }
+    .controls input[type="text"] { width: 100%; }
+    th, td { padding: 8px 10px; font-size: 0.8rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Login view -->
+<div id="login-view" class="login-wrap">
+  <form id="login-form" class="login-card" onsubmit="return doLogin(event)">
+    <h2>Chandrawati Hospital — Admin</h2>
+    <p>Enter the admin password to view bookings.</p>
+    <input type="password" id="password" placeholder="Admin password" autocomplete="current-password" required>
+    <button type="submit" class="primary">Sign in</button>
+    <div id="login-error" class="login-error">Incorrect password.</div>
+  </form>
+</div>
+
+<!-- Dashboard view -->
+<div id="dashboard-view" style="display:none;">
+  <header>
+    <div>
+      <h1>Chandrawati Hospital — Bookings</h1>
+      <div class="sub">Admin dashboard</div>
+    </div>
+    <div class="actions">
+      <a id="csv-link" class="btn" href="#" download>↓ Export CSV</a>
+      <button class="ghost" onclick="refresh()">↻ Refresh</button>
+      <button class="ghost" onclick="logout()">Sign out</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="stats" id="stats"></div>
+
+    <div class="controls">
+      <div class="group">
+        <span>Date:</span>
+        <select id="date-mode" onchange="render()">
+          <option value="upcoming">Today &amp; upcoming</option>
+          <option value="today">Today only</option>
+          <option value="range">Custom range</option>
+          <option value="all">All</option>
+        </select>
+        <input type="date" id="date-from" style="display:none" onchange="render()">
+        <input type="date" id="date-to" style="display:none" onchange="render()">
+      </div>
+      <div class="group">
+        <span>Department:</span>
+        <select id="dept-filter" onchange="render()">
+          <option value="">All</option>
+        </select>
+      </div>
+      <div class="group" style="margin-left:auto">
+        <input type="text" id="search" placeholder="Search name / phone / token…" oninput="render()">
+      </div>
+    </div>
+
+    <div id="results"></div>
+  </main>
+</div>
+
+<script src="config.js"></script>
+<script>
+  const API = window.BOOKINGS_API_URL;
+  const TOKEN_KEY = 'chandrawati_admin_token';
+  let bookings = [];
+
+  // ── Auth ─────────────────────────────────────────────────────────────
+  function getToken() { return sessionStorage.getItem(TOKEN_KEY); }
+  function setToken(t) { sessionStorage.setItem(TOKEN_KEY, t); }
+  function clearToken() { sessionStorage.removeItem(TOKEN_KEY); }
+
+  async function doLogin(e) {
+    e.preventDefault();
+    const pw = document.getElementById('password').value;
+    const err = document.getElementById('login-error');
+    err.style.display = 'none';
+    try {
+      const r = await fetch(API + '/admin/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw }),
+      });
+      if (!r.ok) { err.style.display = 'block'; return false; }
+      const data = await r.json();
+      setToken(data.token);
+      showDashboard();
+    } catch (e) {
+      err.textContent = 'Network error. Is the worker deployed?';
+      err.style.display = 'block';
+    }
+    return false;
+  }
+
+  function logout() {
+    clearToken();
+    document.getElementById('dashboard-view').style.display = 'none';
+    document.getElementById('login-view').style.display = 'flex';
+    document.getElementById('password').value = '';
+  }
+
+  function showDashboard() {
+    document.getElementById('login-view').style.display = 'none';
+    document.getElementById('dashboard-view').style.display = 'block';
+    refresh();
+  }
+
+  // ── Data load ────────────────────────────────────────────────────────
+  async function refresh() {
+    const results = document.getElementById('results');
+    results.innerHTML = '<div class="loading">Loading bookings…</div>';
+    try {
+      const r = await fetch(API + '/admin/bookings', {
+        headers: { 'Authorization': 'Bearer ' + getToken() },
+      });
+      if (r.status === 401) { logout(); return; }
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const data = await r.json();
+      bookings = data.bookings || [];
+      populateDeptFilter();
+      updateCsvLink();
+      render();
+    } catch (e) {
+      results.innerHTML = '<div class="empty">Failed to load: ' + (e.message || e) + '</div>';
+    }
+  }
+
+  function updateCsvLink() {
+    // Anchor tags can't send Authorization headers, so we use a blob URL
+    // populated from an authenticated fetch.
+    const link = document.getElementById('csv-link');
+    link.onclick = async (e) => {
+      e.preventDefault();
+      const r = await fetch(API + '/admin/bookings.csv', {
+        headers: { 'Authorization': 'Bearer ' + getToken() },
+      });
+      if (!r.ok) { alert('CSV export failed'); return; }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'bookings-' + new Date().toISOString().slice(0,10) + '.csv';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    };
+  }
+
+  function populateDeptFilter() {
+    const sel = document.getElementById('dept-filter');
+    const current = sel.value;
+    const depts = [...new Set(bookings.map(b => b.department))].sort();
+    sel.innerHTML = '<option value="">All</option>' +
+      depts.map(d => `<option value="${escapeAttr(d)}">${escapeHtml(d)}</option>`).join('');
+    sel.value = current;
+  }
+
+  // ── Filtering / rendering ────────────────────────────────────────────
+  function todayISO() { return new Date().toISOString().slice(0, 10); }
+
+  function applyFilters() {
+    const mode = document.getElementById('date-mode').value;
+    const fromEl = document.getElementById('date-from');
+    const toEl = document.getElementById('date-to');
+    fromEl.style.display = toEl.style.display = (mode === 'range') ? '' : 'none';
+
+    const dept = document.getElementById('dept-filter').value;
+    const q = document.getElementById('search').value.trim().toLowerCase();
+    const today = todayISO();
+
+    return bookings.filter(b => {
+      if (dept && b.department !== dept) return false;
+      if (mode === 'today' && b.appointment_date !== today) return false;
+      if (mode === 'upcoming' && b.appointment_date < today) return false;
+      if (mode === 'range') {
+        if (fromEl.value && b.appointment_date < fromEl.value) return false;
+        if (toEl.value && b.appointment_date > toEl.value) return false;
+      }
+      if (q) {
+        const hay = [b.patient_name, b.patient_phone, String(b.token_number), b.patient_email]
+          .map(x => (x || '').toLowerCase()).join(' ');
+        if (!hay.includes(q)) return false;
+      }
+      return true;
+    });
+  }
+
+  function render() {
+    const filtered = applyFilters();
+    renderStats(filtered);
+    renderDeptGroups(filtered);
+  }
+
+  function renderStats(filtered) {
+    const today = todayISO();
+    const todayCount = bookings.filter(b => b.appointment_date === today).length;
+    const upcomingCount = bookings.filter(b => b.appointment_date >= today).length;
+    const totalCount = bookings.length;
+    const filteredCount = filtered.length;
+
+    const cards = [
+      { label: 'Today', value: todayCount, sub: today },
+      { label: 'Upcoming', value: upcomingCount, sub: 'today onwards' },
+      { label: 'All-time', value: totalCount, sub: 'total bookings' },
+      { label: 'Showing', value: filteredCount, sub: 'after filters' },
+    ];
+    document.getElementById('stats').innerHTML = cards.map(c => `
+      <div class="stat">
+        <div class="stat-label">${c.label}</div>
+        <div class="stat-value">${c.value}</div>
+        <div class="stat-sub">${escapeHtml(c.sub)}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderDeptGroups(filtered) {
+    const results = document.getElementById('results');
+    if (filtered.length === 0) {
+      results.innerHTML = '<div class="table-wrap"><div class="empty">No bookings match these filters.</div></div>';
+      return;
+    }
+    const groups = {};
+    for (const b of filtered) (groups[b.department] = groups[b.department] || []).push(b);
+    const sortedDepts = Object.keys(groups).sort();
+    const today = todayISO();
+
+    results.innerHTML = sortedDepts.map(dept => {
+      const rows = groups[dept].slice().sort((a, b) => {
+        if (a.appointment_date !== b.appointment_date) return a.appointment_date.localeCompare(b.appointment_date);
+        return (a.slot || '').localeCompare(b.slot || '');
+      });
+      return `
+        <section class="dept-section">
+          <div class="dept-header">
+            <span class="dept-name">${escapeHtml(dept)}</span>
+            <span class="dept-count ${rows.length === 0 ? 'zero' : ''}">${rows.length}</span>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Token</th><th>Date</th><th>Slot</th>
+                  <th>Patient</th><th>Phone</th><th>Email</th>
+                  <th>Age</th><th>Booked</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => `
+                  <tr class="${r.appointment_date === today ? 'today' : ''}">
+                    <td><span class="token">#${r.token_number}</span></td>
+                    <td>${escapeHtml(r.appointment_date)}</td>
+                    <td>${escapeHtml(r.slot)}</td>
+                    <td>${escapeHtml(r.patient_name)}</td>
+                    <td>${escapeHtml(r.patient_phone)}</td>
+                    <td>${escapeHtml(r.patient_email || '—')}</td>
+                    <td>${escapeHtml(r.patient_age || '—')}</td>
+                    <td>${escapeHtml((r.created_at || '').replace('T', ' ').slice(0, 16))}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      `;
+    }).join('');
+  }
+
+  // ── HTML escape helpers ──────────────────────────────────────────────
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[&<>"']/g, c => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
+    })[c]);
+  }
+  function escapeAttr(s) { return escapeHtml(s); }
+
+  // ── Boot ─────────────────────────────────────────────────────────────
+  if (getToken()) showDashboard();
+</script>
+</body>
+</html>

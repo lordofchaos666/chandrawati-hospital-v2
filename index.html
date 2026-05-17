@@ -2834,6 +2834,25 @@
         // API key is stored securely in a Cloudflare Worker (server-side proxy)
         // See SETUP.md for deployment instructions
         const EMAIL_PROXY_URL = 'https://chandrawati-email.drritikchandra.workers.dev';
+        // Bookings DB worker — records each appointment so admins can view them at /admin/.
+        const BOOKINGS_API_URL = 'https://chandrawati-bookings.drritikchandra.workers.dev';
+
+        function recordBooking(toEmail, toName, dept, date, phone, apptNum, slot, age) {
+            return fetch(BOOKINGS_API_URL + '/bookings', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    tokenNumber: apptNum,
+                    department: dept,
+                    patientName: toName,
+                    patientPhone: phone,
+                    patientEmail: toEmail || null,
+                    patientAge: age || null,
+                    appointmentDate: date,
+                    slot
+                })
+            }).catch(err => { console.error('booking record failed', err); });
+        }
 
         function sendBrevoEmail(toEmail, toName, dept, date, phone, apptNum, slot) {
             const htmlContent = `
@@ -3023,6 +3042,8 @@
             db[currentUser.phone].visits.push({ date, dept, status: 'Confirmed', token: apptNum, time: slot });
             saveDB(db);
             currentUser = db[currentUser.phone];
+
+            recordBooking(currentUser.email, currentUser.name, dept, date, currentUser.phone, apptNum, slot, currentUser.age);
 
             sendBrevoEmail(currentUser.email, currentUser.name, dept, date, currentUser.phone, apptNum, slot)
             .then(
