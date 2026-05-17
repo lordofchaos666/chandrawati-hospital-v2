@@ -2834,11 +2834,13 @@
         // API key is stored securely in a Cloudflare Worker (server-side proxy)
         // See SETUP.md for deployment instructions
         const EMAIL_PROXY_URL = 'https://chandrawati-email.drritikchandra.workers.dev';
-        // Bookings DB worker — records each appointment so admins can view them at /admin/.
-        const BOOKINGS_API_URL = 'https://chandrawati-bookings.drritikchandra.workers.dev';
+        // Bookings recorded directly into the OPD HIS backend (Render-deployed).
+        // Staff see new bookings under Reception → Online Bookings inside the HIS.
+        // Update BOOKINGS_API_BASE to the HIS Render URL after first deploy.
+        const BOOKINGS_API_BASE = 'https://chandrawati-opd-his.onrender.com';
 
         function recordBooking(toEmail, toName, dept, date, phone, apptNum, slot, age) {
-            return fetch(BOOKINGS_API_URL + '/bookings', {
+            return fetch(BOOKINGS_API_BASE + '/api/v1/online-bookings', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
