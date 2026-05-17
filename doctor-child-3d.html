@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Doctor & Child — 3D Scene</title>
+<style>
+  :root{
+    --bg-1:#dfe8ff;
+    --bg-2:#eef2ff;
+    --ink:#1a2747;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{height:100%;overflow:hidden;background:linear-gradient(160deg,var(--bg-2),var(--bg-1));font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+  #scene{position:fixed;inset:0;display:block}
+
+  .hud{
+    position:fixed;left:24px;bottom:24px;z-index:5;
+    display:flex;gap:8px;align-items:center;
+    background:rgba(255,255,255,0.7);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    padding:10px 12px;border-radius:999px;
+    box-shadow:0 8px 30px rgba(30,58,138,0.12);
+    border:1px solid rgba(255,255,255,0.6);
+  }
+  .hud button{
+    appearance:none;border:none;background:#4f46e5;color:white;
+    width:38px;height:38px;border-radius:50%;cursor:pointer;
+    display:grid;place-items:center;font-size:14px;
+    transition:transform .15s ease, background .15s;
+  }
+  .hud button:hover{background:#4338ca;transform:scale(1.05)}
+  .hud button.alt{background:transparent;color:#1a2747;width:auto;padding:0 14px;border-radius:18px;height:38px;font-weight:500;font-size:13px}
+  .hud button.alt:hover{background:rgba(79,70,229,0.08)}
+  .label{font-size:12px;color:#475569;padding:0 10px;letter-spacing:0.02em}
+
+  .title{
+    position:fixed;left:24px;top:24px;z-index:5;
+    background:rgba(255,255,255,0.55);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    padding:10px 16px;border-radius:14px;
+    font-size:13px;font-weight:500;letter-spacing:0.02em;
+    border:1px solid rgba(255,255,255,0.6);
+    box-shadow:0 4px 20px rgba(30,58,138,0.08);
+  }
+  .title small{display:block;font-size:11px;color:#64748b;font-weight:400;margin-top:2px}
+
+  .heartbeat{
+    position:fixed;right:24px;top:24px;z-index:5;
+    background:rgba(255,255,255,0.55);
+    backdrop-filter:blur(10px);
+    -webkit-backdrop-filter:blur(10px);
+    padding:12px 16px;border-radius:14px;
+    border:1px solid rgba(255,255,255,0.6);
+    box-shadow:0 4px 20px rgba(30,58,138,0.08);
+    display:flex;align-items:center;gap:10px;
+    opacity:0;transition:opacity .6s ease;
+  }
+  .heartbeat.on{opacity:1}
+  .heartbeat .dot{width:8px;height:8px;border-radius:50%;background:#22d3ee;box-shadow:0 0 12px #22d3ee;animation:pulse 1s ease-in-out infinite}
+  @keyframes pulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.6);opacity:.5}}
+  .heartbeat svg{width:80px;height:24px}
+  .heartbeat .bpm{font-size:11px;color:#64748b}
+  .heartbeat .bpm b{color:#1a2747;font-size:14px}
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+
+<div class="title">
+  Paediatric Check-up
+  <small>3D animated illustration</small>
+</div>
+
+<div class="heartbeat" id="hb">
+  <div class="dot"></div>
+  <svg viewBox="0 0 100 30" fill="none" stroke="#22d3ee" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="0,15 20,15 26,8 32,22 38,5 44,25 50,15 100,15"/>
+  </svg>
+  <div class="bpm"><b>92</b> bpm</div>
+</div>
+
+<div class="hud">
+  <button id="playPause" title="Play / Pause">⏸</button>
+  <button id="replay" title="Replay">↻</button>
+  <span class="label" id="phase">Approaching…</span>
+  <button class="alt" id="orbit" title="Toggle orbit">Orbit ✓</button>
+</div>
+
+<script src="https://unpkg.com/three@0.155.0/build/three.min.js"></script>
+<script>
+(() => {
+  const THREE = window.THREE;
+  const canvas = document.getElementById('scene');
+  const renderer = new THREE.WebGLRenderer({canvas, antialias:true, alpha:true});
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+  const scene = new THREE.Scene();
+  scene.background = null;
+  scene.fog = new THREE.Fog(0xdfe8ff, 22, 45);
+
+  const camera = new THREE.PerspectiveCamera(35, window.innerWidth/window.innerHeight, 0.1, 100);
+  camera.position.set(7, 5.2, 9);
+  camera.lookAt(0, 2.4, 0);
+
+  // -------------------- LIGHTS --------------------
+  const hemi = new THREE.HemisphereLight(0xeaf1ff, 0xb6c4e8, 0.85);
+  scene.add(hemi);
+
+  const key = new THREE.DirectionalLight(0xffffff, 1.25);
+  key.position.set(6, 10, 7);
+  key.castShadow = true;
+  key.shadow.mapSize.set(2048, 2048);
+  key.shadow.camera.left = -10; key.shadow.camera.right = 10;
+  key.shadow.camera.top = 10; key.shadow.camera.bottom = -4;
+  key.shadow.camera.near = 0.5; key.shadow.camera.far = 30;
+  key.shadow.bias = -0.0004;
+  key.shadow.radius = 4;
+  scene.add(key);
+
+  const rim = new THREE.DirectionalLight(0x88b4ff, 0.55);
+  rim.position.set(-6, 4, -5);
+  scene.add(rim);
+
+  const fill = new THREE.DirectionalLight(0xb9d0ff, 0.35);
+  fill.position.set(-4, 3, 6);
+  scene.add(fill);
+
+  // -------------------- PALETTE --------------------
+  const palette = {
+    skin:        0x6cc7e6,
+    skinShadow:  0x4fb1d4,
+    hair:        0x1a1f4a,
+    coat:        0xffffff,
+    coatShadow:  0xe7ecf6,
+    coatLine:    0x1a2747,
+    mask:        0xf5f7fb,
+    maskShadow:  0xd8def0,
+    scrub:       0x9ee5b8,
+    shirt:       0x6a5cf0,
+    shirtDeep:   0x5346d6,
+    shorts:      0x1f2a4a,
+    stethDark:   0x1c2c54,
+    stethSilver: 0xa9c4e8,
+    bedTop:      0x6a5cf0,
+    bedBase:     0xeaecf5,
+    floor:       0xc7d4ef,
+    bgBlob:      0xeef2ff,
+    leafA:       0x82e0a4,
+    leafB:       0x6acff0,
+    accent:      0x4f46e5,
+    accentSoft:  0xbac4f5,
+  };
+
+  // Standard material helpers
+  const mat = (color, opts={}) => new THREE.MeshStandardMaterial({
+    color, roughness: opts.r ?? 0.7, metalness: opts.m ?? 0.0, ...opts
+  });
+
+  // -------------------- BACKGROUND --------------------
+  // Soft floor disc
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(28, 64),
+    new THREE.MeshStandardMaterial({color: palette.floor, roughness:1})
+  );
+  floor.rotation.x = -Math.PI/2;
+  floor.position.y = 0;
+  floor.receiveShadow = true;
+  scene.add(floor);
+
+  // Big background blob (an extruded rounded rectangle facing the camera-ish)
+  function makeBlob(){
+    const shape = new THREE.Shape();
+    const w = 16, h = 9, r = 4;
+    shape.moveTo(-w+r, -h);
+    shape.lineTo(w-r, -h);
+    shape.quadraticCurveTo(w, -h, w, -h+r);
+    shape.lineTo(w, h-r);
+    shape.quadraticCurveTo(w, h, w-r, h);
+    shape.lineTo(-w+r, h);
+    shape.quadraticCurveTo(-w, h, -w, h-r);
+    shape.lineTo(-w, -h+r);
+    shape.quadraticCurveTo(-w, -h, -w+r, -h);
+    const geo = new THREE.ExtrudeGeometry(shape, {depth:0.1, bevelEnabled:true, bevelSize:0.4, bevelThickness:0.2, bevelSegments:6});
+    geo.translate(0, 0, -0.05);
+    return geo;
+  }
+  const blob = new THREE.Mesh(makeBlob(), new THREE.MeshStandardMaterial({color: palette.bgBlob, roughness:1}));
+  blob.position.set(0, 4.5, -5);
+  blob.scale.set(0.8, 0.7, 1);
+  blob.rotation.y = -0.05;
+  scene.add(blob);
+
+  // Floating decorative shapes (plus signs, circles, X marks)
+  const decorGroup = new THREE.Group();
+  scene.add(decorGroup);
+
+  function plusSign(color, size=0.35, depth=0.12){
+    const g = new THREE.Group();
+    const m = mat(color, {r:0.5});
+    const bar = new THREE.BoxGeometry(size, size*0.3, depth);
+    const a = new THREE.Mesh(bar, m);
+    const b = new THREE.Mesh(bar, m);
+    b.rotation.z = Math.PI/2;
+    g.add(a, b);
+    return g;
+  }
+  function ringShape(color, r=0.18){
+    const g = new THREE.TorusGeometry(r, r*0.18, 12, 32);
+    return new THREE.Mesh(g, mat(color, {r:0.4}));
+  }
+  function xMark(color, size=0.3){
+    const g = new THREE.Group();
+    const m = mat(color, {r:0.5});
+    const bar = new THREE.BoxGeometry(size, size*0.18, 0.08);
+    const a = new THREE.Mesh(bar, m); a.rotation.z = Math.PI/4;
+    const b = new THREE.Mesh(bar, m); b.rotation.z = -Math.PI/4;
+    g.add(a,b);
+    return g;
+  }
+  function triangleShape(color, size=0.3){
+    const g = new THREE.CircleGeometry(size, 3);
+    return new THREE.Mesh(g, mat(color, {r:0.5, side:THREE.DoubleSide}));
+  }
+
+  const decorItems = [
+    {kind:'plus', color:0x4f46e5, pos:[ 2.8, 6.6, -3], size:0.5},
+    {kind:'plus', color:0x6acff0, pos:[ 5.4, 3.6, -2.4], size:0.4},
+    {kind:'plus', color:0x9ec6ff, pos:[-5.2, 1.4, -2], size:0.32},
+    {kind:'plus', color:0x82e0a4, pos:[ 4.6, 4.6, -2.2], size:0.4},
+    {kind:'x',    color:0x4f46e5, pos:[ 1.8, 3.8, -2.4], size:0.36},
+    {kind:'x',    color:0x6acff0, pos:[-3.4, 5.2, -2.6], size:0.3},
+    {kind:'ring', color:0x4f46e5, pos:[-4.4, 3.8, -2.4], r:0.22},
+    {kind:'ring', color:0x4f46e5, pos:[ 5.8, 1.8, -2.2], r:0.18},
+    {kind:'tri',  color:0x82e0a4, pos:[-3.2, 6.2, -2.6], size:0.28},
+  ];
+  for(const d of decorItems){
+    let m;
+    if(d.kind==='plus') m = plusSign(d.color, d.size);
+    else if(d.kind==='ring') m = ringShape(d.color, d.r);
+    else if(d.kind==='x') m = xMark(d.color, d.size);
+    else if(d.kind==='tri') m = triangleShape(d.color, d.size);
+    m.position.set(...d.pos);
+    m.userData.baseY = d.pos[1];
+    m.userData.phase = Math.random()*Math.PI*2;
+    m.userData.speed = 0.6 + Math.random()*0.6;
+    decorGroup.add(m);
+  }
+
+  // Medical shield on right
+  function medShield(){
+    const g = new THREE.Group();
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0.9);
+    shape.quadraticCurveTo(0.8, 0.9, 0.8, 0.2);
+    shape.lineTo(0.8, -0.4);
+    shape.quadraticCurveTo(0.8, -1, 0, -1.05);
+    shape.quadraticCurveTo(-0.8, -1, -0.8, -0.4);
+    shape.lineTo(-0.8, 0.2);
+    shape.quadraticCurveTo(-0.8, 0.9, 0, 0.9);
+    const geo = new THREE.ExtrudeGeometry(shape, {depth:0.18, bevelEnabled:true, bevelSize:0.06, bevelThickness:0.05, bevelSegments:4});
+    const shield = new THREE.Mesh(geo, mat(0xffffff, {r:0.5}));
+    shield.scale.set(0.9, 0.9, 0.9);
+    g.add(shield);
+    // Cross
+    const cross = plusSign(0x4f9eff, 0.55, 0.16);
+    cross.position.set(0, -0.1, 0.22);
+    g.add(cross);
+    return g;
+  }
+  const shield = medShield();
+  shield.position.set(5.5, 5.3, -2.5);
+  shield.rotation.y = -0.15;
+  scene.add(shield);
+
+  // Decorative leaves (left & right bottom)
+  function leafCluster(side){
+    const g = new THREE.Group();
+    const leafShape = new THREE.Shape();
+    leafShape.moveTo(0,0);
+    leafShape.bezierCurveTo(0.3, 0.6, 0.5, 1.8, 0, 2.5);
+    leafShape.bezierCurveTo(-0.5, 1.8, -0.3, 0.6, 0, 0);
+    const geo = new THREE.ExtrudeGeometry(leafShape, {depth:0.05, bevelEnabled:false});
+    const colors = [palette.leafA, palette.leafB, palette.leafA, palette.leafB];
+    const tilts =  [-0.3, 0, 0.35, 0.6];
+    const heights= [0.0, -0.2, 0.1, -0.1];
+    for(let i=0;i<4;i++){
+      const leaf = new THREE.Mesh(geo, mat(colors[i], {r:0.7}));
+      leaf.position.set(i*0.4 - 0.6, heights[i], i*0.02);
+      leaf.rotation.z = tilts[i];
+      leaf.scale.set(0.7,0.7,0.7);
+      leaf.castShadow = false;
+      g.add(leaf);
+    }
+    if(side==='left'){ g.position.set(-6.5, 0, 2); g.rotation.y = 0.2; }
+    else { g.position.set(6, 0, 2); g.rotation.y = -0.3; g.scale.x = -1; }
+    return g;
+  }
+  scene.add(leafCluster('left'));
+  scene.add(leafCluster('right'));
+
+  // -------------------- EXAM BED --------------------
+  const bedGroup = new THREE.Group();
+  scene.add(bedGroup);
+
+  const bedTop = new THREE.Mesh(
+    new THREE.BoxGeometry(4.4, 0.45, 1.8),
+    mat(palette.bedTop, {r:0.6})
+  );
+  bedTop.position.set(0, 1.45, 0);
+  bedTop.castShadow = true; bedTop.receiveShadow = true;
+  bedGroup.add(bedTop);
+
+  const bedBase = new THREE.Mesh(
+    new THREE.BoxGeometry(4.2, 1.2, 1.7),
+    mat(palette.bedBase, {r:0.7})
+  );
+  bedBase.position.set(0, 0.6, 0);
+  bedBase.castShadow = true; bedBase.receiveShadow = true;
+  bedGroup.add(bedBase);
+
+  // bed legs (subtle)
+  for(const x of [-1.9, 1.9]){
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.18, 1.6), mat(palette.bedTop, {r:0.6}));
+    leg.position.set(x, 0.09, 0);
+    leg.castShadow = true; leg.receiveShadow = true;
+    bedGroup.add(leg);
+  }
+
+  // -------------------- HELPERS --------------------
+  function roundedBox(w,h,d, r=0.15, segs=4){
+    // Use BoxGeometry with bevel-like approach via subdivision is complex; use ExtrudeGeometry on rounded rect
+    const shape = new THREE.Shape();
+    const x = -w/2, y = -h/2;
+    shape.moveTo(x+r, y);
+    shape.lineTo(x+w-r, y);
+    shape.quadraticCurveTo(x+w, y, x+w, y+r);
+    shape.lineTo(x+w, y+h-r);
+    shape.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+    shape.lineTo(x+r, y+h);
+    shape.quadraticCurveTo(x, y+h, x, y+h-r);
+    shape.lineTo(x, y+r);
+    shape.quadraticCurveTo(x, y, x+r, y);
+    const geo = new THREE.ExtrudeGeometry(shape, {
+      depth:d, bevelEnabled:true,
+      bevelSize:Math.min(r*0.4,0.08), bevelThickness:Math.min(r*0.4,0.08),
+      bevelSegments:3, curveSegments:8
+    });
+    geo.translate(0,0,-d/2);
+    return geo;
+  }
+
+  // -------------------- CHILD --------------------
+  const child = new THREE.Group();
+  child.position.set(-1.45, 1.7, 0.1);
+  scene.add(child);
+
+  // Hips/pelvis baseline at y=0 of child group
+  // Shorts
+  const shorts = new THREE.Mesh(
+    roundedBox(0.95, 0.55, 0.7, 0.2),
+    mat(palette.shorts, {r:0.7})
+  );
+  shorts.position.set(0, 0.05, 0);
+  shorts.castShadow = true;
+  child.add(shorts);
+
+  // Legs (dangling off bed)
+  function childLeg(side){
+    const g = new THREE.Group();
+    const thigh = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.12, 0.45, 16),
+      mat(palette.shorts, {r:0.7})
+    );
+    thigh.position.set(0, -0.22, 0); thigh.castShadow = true;
+    g.add(thigh);
+    const knee = new THREE.Mesh(new THREE.SphereGeometry(0.13, 16, 16), mat(palette.skin, {r:0.6}));
+    knee.position.set(0, -0.45, 0); knee.castShadow = true;
+    g.add(knee);
+    const shin = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11, 0.1, 0.55, 16),
+      mat(palette.skin, {r:0.6})
+    );
+    shin.position.set(0, -0.73, 0); shin.castShadow = true;
+    g.add(shin);
+    const foot = new THREE.Mesh(
+      roundedBox(0.22, 0.12, 0.32, 0.06),
+      mat(palette.skinShadow, {r:0.7})
+    );
+    foot.position.set(0, -1.04, 0.05);
+    foot.castShadow = true;
+    g.add(foot);
+    g.position.x = side * 0.22;
+    return g;
+  }
+  const childLegL = childLeg(-1); child.add(childLegL);
+  const childLegR = childLeg(1);  child.add(childLegR);
+
+  // Torso (purple shirt)
+  const torso = new THREE.Mesh(
+    roundedBox(1.15, 1.05, 0.78, 0.3),
+    mat(palette.shirt, {r:0.6})
+  );
+  torso.position.set(0, 0.7, 0);
+  torso.castShadow = true; torso.receiveShadow = true;
+  child.add(torso);
+
+  // Neck
+  const neck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.18, 0.18, 16),
+    mat(palette.skin, {r:0.6})
+  );
+  neck.position.set(0, 1.32, 0);
+  neck.castShadow = true;
+  child.add(neck);
+
+  // Head group (so we can nod / look)
+  const childHeadGroup = new THREE.Group();
+  childHeadGroup.position.set(0, 1.45, 0);
+  child.add(childHeadGroup);
+
+  const childHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.55, 32, 32),
+    mat(palette.skin, {r:0.55})
+  );
+  childHead.scale.set(1, 1.05, 1);
+  childHead.castShadow = true;
+  childHeadGroup.add(childHead);
+
+  // Hair (dome)
+  const childHair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.58, 32, 32, 0, Math.PI*2, 0, Math.PI*0.55),
+    mat(palette.hair, {r:0.5})
+  );
+  childHair.position.set(0, 0.18, 0);
+  childHair.castShadow = true;
+  childHeadGroup.add(childHair);
+
+  // Hair cowlick
+  const cowlick = new THREE.Mesh(
+    new THREE.ConeGeometry(0.08, 0.22, 12),
+    mat(palette.hair)
+  );
+  cowlick.position.set(-0.1, 0.62, 0.05);
+  cowlick.rotation.z = -0.4;
+  cowlick.castShadow = true;
+  childHeadGroup.add(cowlick);
+
+  // Eyes (small spheres) — facing +X (toward doctor on right)
+  function makeEye(){
+    const g = new THREE.Group();
+    const white = new THREE.Mesh(
+      new THREE.SphereGeometry(0.07, 16, 16),
+      mat(0xffffff, {r:0.4})
+    );
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.045, 16, 16),
+      mat(palette.hair, {r:0.3})
+    );
+    pupil.position.z = 0.05;
+    g.add(white, pupil);
+    return g;
+  }
+  const childEyeL = makeEye();
+  childEyeL.position.set(0.42, 0.08, 0.2);
+  childEyeL.rotation.y = Math.PI/2;
+  childHeadGroup.add(childEyeL);
+  const childEyeR = makeEye();
+  childEyeR.position.set(0.42, 0.08, -0.2);
+  childEyeR.rotation.y = Math.PI/2;
+  childHeadGroup.add(childEyeR);
+
+  // Cheek blush
+  function cheek(){
+    const c = new THREE.Mesh(
+      new THREE.CircleGeometry(0.08, 16),
+      new THREE.MeshBasicMaterial({color:0xff9bb0, transparent:true, opacity:0.45})
+    );
+    c.rotation.y = Math.PI/2;
+    return c;
+  }
+  const cheekL = cheek(); cheekL.position.set(0.44, -0.1, 0.25); childHeadGroup.add(cheekL);
+  const cheekR = cheek(); cheekR.position.set(0.44, -0.1, -0.25); childHeadGroup.add(cheekR);
+
+  // Mouth — morphable smile (torus arc)
+  // We'll use two states: small smile and big smile; we'll swap geometry by scaling
+  const mouthGroup = new THREE.Group();
+  mouthGroup.position.set(0.5, -0.18, 0);
+  mouthGroup.rotation.y = Math.PI/2;
+  childHeadGroup.add(mouthGroup);
+
+  // The "open mouth" — a small dark ellipse
+  const mouthOpen = new THREE.Mesh(
+    new THREE.SphereGeometry(0.085, 16, 16),
+    mat(0x1a1f4a, {r:0.4})
+  );
+  mouthOpen.scale.set(1, 0.55, 0.4);
+  mouthOpen.position.set(0, 0, 0.02);
+  mouthGroup.add(mouthOpen);
+
+  // Tongue/teeth highlight (subtle, light)
+  const tooth = new THREE.Mesh(
+    new THREE.BoxGeometry(0.09, 0.025, 0.02),
+    mat(0xffffff)
+  );
+  tooth.position.set(0, 0.022, 0.04);
+  mouthGroup.add(tooth);
+
+  // Smile arc (a thin curved line under the open mouth, for the smaller smile state)
+  const smileLineGeo = new THREE.TorusGeometry(0.13, 0.012, 8, 24, Math.PI*0.7);
+  const smileLine = new THREE.Mesh(smileLineGeo, mat(0x1a1f4a, {r:0.5}));
+  smileLine.rotation.z = Math.PI; // arc opens downward → curve like smile (we want it curving up)
+  smileLine.position.set(0, 0.05, 0.05);
+  mouthGroup.add(smileLine);
+
+  // Child arms — short stubby arms by sides, hands on bed
+  function childArm(side){
+    const g = new THREE.Group();
+    const shoulder = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 16, 16),
+      mat(palette.shirt, {r:0.6})
+    );
+    shoulder.castShadow = true;
+    g.add(shoulder);
+    const upper = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.13, 0.12, 0.4, 16),
+      mat(palette.shirt, {r:0.6})
+    );
+    upper.position.y = -0.25; upper.castShadow = true;
+    g.add(upper);
+    const fore = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.11, 0.1, 0.42, 16),
+      mat(palette.skin, {r:0.6})
+    );
+    fore.position.y = -0.65; fore.castShadow = true;
+    g.add(fore);
+    const hand = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, 16, 16),
+      mat(palette.skin, {r:0.6})
+    );
+    hand.position.y = -0.9; hand.castShadow = true;
+    g.add(hand);
+    g.position.set(side*0.6, 1.15, 0);
+    g.rotation.z = side * -0.05;
+    return g;
+  }
+  const childArmL = childArm(-1); child.add(childArmL);
+  const childArmR = childArm(1);  child.add(childArmR);
+
+  // -------------------- DOCTOR --------------------
+  const doctor = new THREE.Group();
+  doctor.position.set(1.35, 0, 0.0);
+  scene.add(doctor);
+
+  // Doctor pants (just suggestion, dark behind coat)
+  const docPants = new THREE.Mesh(
+    roundedBox(0.95, 1.6, 0.7, 0.18),
+    mat(0x202a44, {r:0.7})
+  );
+  docPants.position.set(0, 0.85, 0);
+  docPants.castShadow = true;
+  doctor.add(docPants);
+
+  // Lab coat (large box, slightly flared)
+  const coatGeo = roundedBox(1.6, 2.2, 1.05, 0.35);
+  const coat = new THREE.Mesh(coatGeo, mat(palette.coat, {r:0.55}));
+  coat.position.set(0, 1.9, 0);
+  coat.castShadow = true; coat.receiveShadow = true;
+  doctor.add(coat);
+
+  // Coat lapel V (subtle dark V cut at top center)
+  const lapel = new THREE.Mesh(
+    new THREE.ConeGeometry(0.28, 0.5, 4),
+    mat(palette.scrub, {r:0.7})
+  );
+  lapel.rotation.y = Math.PI/4;
+  lapel.position.set(0, 2.75, 0.55);
+  lapel.scale.set(1, 1, 0.2);
+  doctor.add(lapel);
+
+  // Inner scrub V (deeper)
+  const scrubV = new THREE.Mesh(
+    new THREE.ConeGeometry(0.18, 0.4, 4),
+    mat(0x6fd494, {r:0.6})
+  );
+  scrubV.rotation.y = Math.PI/4;
+  scrubV.position.set(0, 2.78, 0.6);
+  scrubV.scale.set(1, 1, 0.18);
+  doctor.add(scrubV);
+
+  // Neck
+  const docNeck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.19, 0.21, 0.22, 16),
+    mat(palette.skin, {r:0.6})
+  );
+  docNeck.position.set(0, 3.15, 0);
+  docNeck.castShadow = true;
+  doctor.add(docNeck);
+
+  // Head group
+  const docHeadGroup = new THREE.Group();
+  docHeadGroup.position.set(0, 3.32, 0);
+  doctor.add(docHeadGroup);
+
+  const docHead = new THREE.Mesh(
+    new THREE.SphereGeometry(0.62, 32, 32),
+    mat(palette.skin, {r:0.55})
+  );
+  docHead.scale.set(1, 1.05, 1);
+  docHead.castShadow = true;
+  docHeadGroup.add(docHead);
+
+  // Doctor hair
+  const docHair = new THREE.Mesh(
+    new THREE.SphereGeometry(0.66, 32, 32, 0, Math.PI*2, 0, Math.PI*0.5),
+    mat(palette.hair, {r:0.5})
+  );
+  docHair.position.set(0, 0.18, 0);
+  docHair.castShadow = true;
+  docHeadGroup.add(docHair);
+
+  // Hair side tuft
+  const tuft = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 16, 16),
+    mat(palette.hair, {r:0.5})
+  );
+  tuft.position.set(-0.45, 0.25, 0);
+  tuft.scale.set(0.9, 0.8, 0.9);
+  tuft.castShadow = true;
+  docHeadGroup.add(tuft);
+
+  // Doctor eye (only the side facing camera — child side actually, but he's looking down at chest)
+  const docEyeL = makeEye();
+  docEyeL.position.set(-0.48, 0.05, 0.2);
+  docEyeL.rotation.y = -Math.PI/2;
+  docHeadGroup.add(docEyeL);
+  const docEyeR = makeEye();
+  docEyeR.position.set(-0.48, 0.05, -0.2);
+  docEyeR.rotation.y = -Math.PI/2;
+  docHeadGroup.add(docEyeR);
+
+  // Mask (white front lower face)
+  const maskShape = new THREE.Shape();
+  maskShape.moveTo(-0.4, -0.4);
+  maskShape.lineTo(0.4, -0.4);
+  maskShape.quadraticCurveTo(0.5, 0, 0.4, 0.25);
+  maskShape.lineTo(-0.4, 0.25);
+  maskShape.quadraticCurveTo(-0.5, 0, -0.4, -0.4);
+  const maskGeo = new THREE.ExtrudeGeometry(maskShape, {depth:0.08, bevelEnabled:true, bevelSize:0.04, bevelThickness:0.02, bevelSegments:3});
+  const mask = new THREE.Mesh(maskGeo, mat(palette.mask, {r:0.6}));
+  mask.position.set(-0.58, -0.12, 0);
+  mask.rotation.y = -Math.PI/2;
+  mask.scale.set(0.95, 0.9, 1);
+  mask.castShadow = true;
+  docHeadGroup.add(mask);
+
+  // Mask straps (thin tubes)
+  function maskStrap(zSign){
+    const curve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(-0.55, 0.18, zSign*0.18),
+      new THREE.Vector3(-0.2, 0.32, zSign*0.6),
+      new THREE.Vector3( 0.4, 0.18, zSign*0.45)
+    );
+    const tube = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, 24, 0.018, 8, false),
+      mat(palette.maskShadow, {r:0.7})
+    );
+    return tube;
+  }
+  docHeadGroup.add(maskStrap(1));
+  docHeadGroup.add(maskStrap(-1));
+
+  // -------------------- DOCTOR ARMS --------------------
+  // Left arm (away from child, hangs by side)
+  const docArmL = new THREE.Group();
+  {
+    const sh = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), mat(palette.coat, {r:0.6}));
+    sh.castShadow = true;
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.17, 0.7, 16), mat(palette.coat, {r:0.6}));
+    upper.position.y = -0.4; upper.castShadow = true;
+    const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.15, 0.75, 16), mat(palette.coat, {r:0.6}));
+    fore.position.y = -1.12; fore.castShadow = true;
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.16, 16, 16), mat(palette.skin, {r:0.6}));
+    hand.position.y = -1.55; hand.castShadow = true;
+    docArmL.add(sh, upper, fore, hand);
+  }
+  docArmL.position.set(0.65, 2.7, 0); // right shoulder from his POV → +X (away from child)
+  docArmL.rotation.z = 0.08;
+  doctor.add(docArmL);
+
+  // Right arm — the one with stethoscope, articulated (shoulder → elbow → wrist)
+  // We model it as nested groups so we can rotate at shoulder & elbow.
+  const docShoulderR = new THREE.Group();
+  docShoulderR.position.set(-0.62, 2.78, 0); // shoulder pivot (child-side)
+  doctor.add(docShoulderR);
+
+  const docShoulderBall = new THREE.Mesh(
+    new THREE.SphereGeometry(0.22, 16, 16),
+    mat(palette.coat, {r:0.6})
+  );
+  docShoulderBall.castShadow = true;
+  docShoulderR.add(docShoulderBall);
+
+  const docUpperArmR = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.16, 0.8, 16),
+    mat(palette.coat, {r:0.6})
+  );
+  docUpperArmR.position.y = -0.4; // hangs from shoulder
+  docUpperArmR.castShadow = true;
+  docShoulderR.add(docUpperArmR);
+
+  // Elbow pivot at end of upper arm
+  const docElbowR = new THREE.Group();
+  docElbowR.position.y = -0.8;
+  docShoulderR.add(docElbowR);
+
+  const docElbowBall = new THREE.Mesh(
+    new THREE.SphereGeometry(0.17, 16, 16),
+    mat(palette.coat, {r:0.6})
+  );
+  docElbowBall.castShadow = true;
+  docElbowR.add(docElbowBall);
+
+  const docForeArmR = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.16, 0.14, 0.78, 16),
+    mat(palette.coat, {r:0.6})
+  );
+  docForeArmR.position.y = -0.4;
+  docForeArmR.castShadow = true;
+  docElbowR.add(docForeArmR);
+
+  // Wrist/hand
+  const docWristR = new THREE.Group();
+  docWristR.position.y = -0.78;
+  docElbowR.add(docWristR);
+
+  const docHandR = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 16, 16),
+    mat(palette.skin, {r:0.6})
+  );
+  docHandR.scale.set(1, 0.9, 1.05);
+  docHandR.castShadow = true;
+  docWristR.add(docHandR);
+
+  // Coat cuff at wrist
+  const cuff = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.18, 0.1, 16),
+    mat(palette.coatShadow, {r:0.6})
+  );
+  cuff.position.y = 0.12;
+  docWristR.add(cuff);
+
+  // -------------------- STETHOSCOPE --------------------
+  // The chest piece is held in the doctor's right hand (chuck attached to wrist group)
+  const chest = new THREE.Group();
+  chest.position.set(0, -0.18, 0); // below the hand
+  docWristR.add(chest);
+
+  const chestDisc = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.18, 0.18, 0.06, 24),
+    mat(palette.stethSilver, {r:0.2, m:0.8})
+  );
+  chestDisc.rotation.x = Math.PI/2;
+  chestDisc.castShadow = true;
+  chest.add(chestDisc);
+
+  const chestRing = new THREE.Mesh(
+    new THREE.TorusGeometry(0.18, 0.025, 12, 32),
+    mat(palette.stethDark, {r:0.4})
+  );
+  chestRing.rotation.x = Math.PI/2;
+  chest.add(chestRing);
+
+  // Connector knob on top of chest piece (where tubing meets)
+  const chestKnob = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.045, 0.05, 0.16, 12),
+    mat(palette.stethDark, {r:0.4})
+  );
+  chestKnob.position.set(0, 0.1, 0);
+  chest.add(chestKnob);
+
+  // Earpiece group (worn on doctor's head, hangs from neck/ears)
+  const earpieces = new THREE.Group();
+  doctor.add(earpieces);
+  // We'll position the two ear hook ends near doctor's ears, and route the tubing from those points down through the neck to the chest piece each frame.
+
+  // The earpiece "Y" — two short tubes that loop into doctor's ears
+  function earHook(side){
+    const g = new THREE.Group();
+    // small earpiece bud
+    const bud = new THREE.Mesh(
+      new THREE.SphereGeometry(0.05, 12, 12),
+      mat(palette.stethDark, {r:0.4})
+    );
+    g.add(bud);
+    // hook tube curving down/forward
+    const curve = new THREE.QuadraticBezierCurve3(
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(side*0.0, -0.18, 0.08),
+      new THREE.Vector3(side*0.05, -0.32, 0.18)
+    );
+    const tube = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, 16, 0.028, 8, false),
+      mat(palette.stethDark, {r:0.4})
+    );
+    g.add(tube);
+    return g;
+  }
+  const earL = earHook(-1); earpieces.add(earL);
+  const earR = earHook(1);  earpieces.add(earR);
+
+  // Two flexible tubes (rebuilt each frame) — from ear bottoms down to a Y-junction, then one tube to the chest piece.
+  let tubeMeshL, tubeMeshR, tubeMeshMain;
+  const tubeMat = mat(palette.stethDark, {r:0.45});
+
+  function buildStethTubes(){
+    // World positions
+    const earBottomL = new THREE.Vector3();
+    const earBottomR = new THREE.Vector3();
+    const chestWorld = new THREE.Vector3();
+    earL.getWorldPosition(earBottomL); earBottomL.y -= 0.32;
+    earR.getWorldPosition(earBottomR); earBottomR.y -= 0.32;
+    // approximate end-of-hook position
+    const earTipL = earBottomL.clone();
+    earTipL.z += 0.18;
+    const earTipR = earBottomR.clone();
+    earTipR.z += 0.18;
+
+    chest.getWorldPosition(chestWorld);
+    // Knob top in world (chest +y 0.18)
+    const knobTop = chestWorld.clone();
+    knobTop.y += 0.18;
+
+    // Y junction in world space — sit it in front of doctor's chest, between the two ear bottoms and the chest piece
+    const yJunction = new THREE.Vector3(
+      (earTipL.x + earTipR.x)/2,
+      (earTipL.y + earTipR.y)/2 - 0.55,
+      (earTipL.z + earTipR.z)/2 + 0.1
+    );
+    // Bias toward chest piece if it's far
+    yJunction.x = yJunction.x*0.4 + knobTop.x*0.6;
+    yJunction.z = yJunction.z*0.5 + knobTop.z*0.5;
+
+    function makeTubeBetween(a, mid, b){
+      const curve = new THREE.QuadraticBezierCurve3(a, mid, b);
+      return new THREE.TubeGeometry(curve, 32, 0.028, 8, false);
+    }
+
+    // Left ear → Y
+    const midL = earTipL.clone().lerp(yJunction, 0.5);
+    midL.z += 0.15; midL.y -= 0.1;
+    // Right ear → Y
+    const midR = earTipR.clone().lerp(yJunction, 0.5);
+    midR.z += 0.15; midR.y -= 0.1;
+    // Y → chest knob
+    const midMain = yJunction.clone().lerp(knobTop, 0.5);
+    midMain.z += 0.1;
+
+    // Dispose old
+    if(tubeMeshL){ scene.remove(tubeMeshL); tubeMeshL.geometry.dispose(); }
+    if(tubeMeshR){ scene.remove(tubeMeshR); tubeMeshR.geometry.dispose(); }
+    if(tubeMeshMain){ scene.remove(tubeMeshMain); tubeMeshMain.geometry.dispose(); }
+
+    tubeMeshL = new THREE.Mesh(makeTubeBetween(earTipL, midL, yJunction), tubeMat);
+    tubeMeshR = new THREE.Mesh(makeTubeBetween(earTipR, midR, yJunction), tubeMat);
+    tubeMeshMain = new THREE.Mesh(makeTubeBetween(yJunction, midMain, knobTop), tubeMat);
+    tubeMeshL.castShadow = tubeMeshR.castShadow = tubeMeshMain.castShadow = true;
+    scene.add(tubeMeshL, tubeMeshR, tubeMeshMain);
+  }
+
+  // -------------------- POSE / RIG --------------------
+  // Set ear hook positions on doctor's head (relative to docHeadGroup but parented to doctor for stability)
+  function syncEarpieces(){
+    const lp = new THREE.Vector3(-0.5, -0.15, 0.18);
+    const rp = new THREE.Vector3(-0.5, -0.15, -0.18);
+    docHeadGroup.localToWorld(lp);
+    docHeadGroup.localToWorld(rp);
+    doctor.worldToLocal(lp);
+    doctor.worldToLocal(rp);
+    earL.position.copy(lp);
+    earR.position.copy(rp);
+  }
+
+  // Head tilt: doctor looks down slightly toward child
+  docHeadGroup.rotation.x = 0.18;
+  docHeadGroup.rotation.y = -0.35;
+
+  // Child head looks up at doctor (right & up slightly)
+  childHeadGroup.rotation.y = -0.25;
+  childHeadGroup.rotation.x = -0.05;
+
+  // Initial arm pose - we'll animate from this
+  // Shoulder initial: arm hanging
+  docShoulderR.rotation.x = 0;     // forward/back swing
+  docShoulderR.rotation.z = 0.2;   // inward
+  docElbowR.rotation.x = 0.0;      // bend
+
+  // -------------------- ANIMATION TIMELINE --------------------
+  // Phases:
+  // 0.0 - 1.5s: approach (arm raises and bends toward chest)
+  // 1.5 - 2.0s: placement (steth touches chest, slight settle)
+  // 2.0 - 5.5s: listen (steth held in place, doctor head nods slightly, child smiles big, heartbeat shows)
+  // 5.5 - 6.5s: ease back to start (arm returns)
+  // Loop
+
+  const TL = {
+    approach: [0.0, 1.6],
+    place:    [1.6, 2.2],
+    listen:   [2.2, 5.8],
+    retreat:  [5.8, 6.8],
+    total:    6.8
+  };
+
+  function easeInOut(t){ return t<0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2)/2; }
+  function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+  function lerp(a,b,t){return a + (b-a)*t;}
+
+  function inPhase(t, [a,b]){
+    if(t < a) return -1;
+    if(t > b) return 2;
+    return (t-a)/(b-a);
+  }
+
+  function updateAnim(t){
+    t = ((t % TL.total) + TL.total) % TL.total;
+
+    // ARM TARGET POSES
+    // Resting (start): shoulder hanging, elbow slightly bent. Hand near doctor's hip.
+    // Examining: shoulder rotated forward (rotation.x ~ -1.2), elbow bent (rotation.x ~ 1.4)
+    //            shoulder rotated to bring hand toward child (rotation.z ~ -0.3)
+    const rest = { shX: 0.0,   shZ: 0.2, elX: 0.1, shY: 0.0 };
+    const exam = { shX: -1.15, shZ: -0.45, elX: 1.55, shY: 0.45 };
+
+    let p;
+    if(t < TL.approach[1]){
+      p = easeInOut(clamp((t - TL.approach[0])/(TL.approach[1]-TL.approach[0]),0,1));
+    } else if(t < TL.place[1]){
+      // small overshoot/settle
+      const u = (t - TL.place[0])/(TL.place[1]-TL.place[0]);
+      p = 1 + Math.sin(u*Math.PI) * 0.02;
+    } else if(t < TL.listen[1]){
+      p = 1; // hold
+    } else if(t < TL.retreat[1]){
+      const u = (t - TL.retreat[0])/(TL.retreat[1]-TL.retreat[0]);
+      p = 1 - easeInOut(clamp(u,0,1));
+    } else {
+      p = 0;
+    }
+
+    docShoulderR.rotation.x = lerp(rest.shX, exam.shX, p);
+    docShoulderR.rotation.z = lerp(rest.shZ, exam.shZ, p);
+    docShoulderR.rotation.y = lerp(rest.shY, exam.shY, p);
+    docElbowR.rotation.x    = lerp(rest.elX, exam.elX, p);
+
+    // Wrist twist a touch so disc faces child's chest
+    docWristR.rotation.x = lerp(0, -0.6, p);
+    docWristR.rotation.z = lerp(0, -0.3, p);
+
+    // Doctor head tilt deepens during listening
+    const listenP = t > TL.place[1] && t < TL.listen[1] ? 1 : (p);
+    docHeadGroup.rotation.x = lerp(0.18, 0.36, p * listenP);
+    // small breathing on doctor
+    doctor.position.y = Math.sin(t*1.4)*0.02;
+
+    // Child smile escalation — small smile at rest, big open smile during listen
+    const smileT = clamp((t - TL.approach[1]) / (TL.listen[0] - TL.approach[1] + 1.0), 0, 1);
+    const smileP = (t > TL.retreat[0]) ? 1 - easeInOut(clamp((t-TL.retreat[0])/(TL.retreat[1]-TL.retreat[0]),0,1)) : easeInOut(smileT);
+
+    // Open mouth scales up during smile
+    mouthOpen.scale.set(
+      lerp(0.9, 1.35, smileP),
+      lerp(0.4, 0.85, smileP),
+      0.4
+    );
+    mouthOpen.position.y = lerp(0.03, -0.04, smileP);
+    tooth.position.y = lerp(0.028, 0.04, smileP);
+    tooth.scale.set(lerp(0.7,1.1,smileP), 1, 1);
+
+    // Smile arc widens
+    smileLine.scale.set(lerp(1, 1.35, smileP), lerp(1, 1.4, smileP), 1);
+    smileLine.position.y = lerp(0.05, 0.08, smileP);
+
+    // Cheek blush intensifies
+    cheekL.material.opacity = lerp(0.35, 0.65, smileP);
+    cheekR.material.opacity = lerp(0.35, 0.65, smileP);
+
+    // Eyes squint a touch when smiling big
+    childEyeL.scale.y = lerp(1, 0.55, smileP);
+    childEyeR.scale.y = lerp(1, 0.55, smileP);
+
+    // Child head tilts up slightly toward doctor when smiling
+    childHeadGroup.rotation.y = lerp(-0.25, -0.35, smileP);
+    childHeadGroup.rotation.z = lerp(0, 0.05, smileP);
+
+    // Child legs swing during listen (excited)
+    const swing = Math.sin(t*4.2) * 0.15 * smileP;
+    childLegL.rotation.x = swing;
+    childLegR.rotation.x = -swing*0.8;
+
+    // Subtle heartbeat scale on chest piece while listening
+    if(t > TL.place[1] && t < TL.retreat[0]){
+      const beat = Math.sin((t - TL.place[1]) * Math.PI * 3.4);
+      const pulse = 1 + Math.max(0, beat) * 0.06;
+      chestDisc.scale.set(pulse, 1, pulse);
+    } else {
+      chestDisc.scale.set(1,1,1);
+    }
+
+    // Heartbeat HUD shows during listening
+    const hb = document.getElementById('hb');
+    if(t > TL.place[1] && t < TL.retreat[0]) hb.classList.add('on');
+    else hb.classList.remove('on');
+
+    // Phase label
+    const phaseEl = document.getElementById('phase');
+    if(t < TL.approach[1]) phaseEl.textContent = 'Approaching…';
+    else if(t < TL.place[1]) phaseEl.textContent = 'Placing stethoscope';
+    else if(t < TL.listen[1]) phaseEl.textContent = 'Listening to heartbeat';
+    else phaseEl.textContent = 'Easing back';
+
+    // Decorative floaters
+    decorGroup.children.forEach(m => {
+      m.position.y = m.userData.baseY + Math.sin(t*m.userData.speed + m.userData.phase)*0.12;
+      m.rotation.z += 0.003;
+    });
+
+    // Sync earpieces + redraw flexible tubes
+    syncEarpieces();
+    buildStethTubes();
+  }
+
+  // -------------------- CAMERA / CONTROLS --------------------
+  let orbit = true;
+  const orbitState = { angle: 0, radius: 11.5, height: 5.0, target: new THREE.Vector3(0, 2.4, 0) };
+  // Match initial camera
+  const startCam = new THREE.Vector3(7, 5.2, 9);
+  function setCameraFromOrbit(){
+    camera.position.set(
+      Math.sin(orbitState.angle)*orbitState.radius,
+      orbitState.height,
+      Math.cos(orbitState.angle)*orbitState.radius
+    );
+    camera.lookAt(orbitState.target);
+  }
+
+  // Initial orbit angle to match start
+  orbitState.angle = Math.atan2(startCam.x, startCam.z);
+  orbitState.radius = Math.sqrt(startCam.x**2 + startCam.z**2);
+  orbitState.height = startCam.y;
+
+  // Mouse / touch drag override
+  let dragging = false, lastX = 0, lastY = 0, manualAngle = orbitState.angle, manualHeight = orbitState.height;
+  let userInteracted = false;
+  canvas.addEventListener('pointerdown', e => {
+    dragging = true; lastX = e.clientX; lastY = e.clientY; userInteracted = true;
+  });
+  window.addEventListener('pointerup', () => dragging = false);
+  window.addEventListener('pointermove', e => {
+    if(!dragging) return;
+    const dx = e.clientX - lastX, dy = e.clientY - lastY;
+    manualAngle -= dx * 0.005;
+    manualHeight = clamp(manualHeight + dy * 0.02, 1.5, 9);
+    lastX = e.clientX; lastY = e.clientY;
+  });
+  // Wheel = zoom
+  canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    orbitState.radius = clamp(orbitState.radius + e.deltaY * 0.01, 6, 22);
+    userInteracted = true;
+  }, {passive:false});
+
+  // Buttons
+  let playing = true;
+  let animStart = performance.now()/1000;
+  let pausedAt = 0;
+
+  document.getElementById('playPause').addEventListener('click', e => {
+    playing = !playing;
+    if(playing){ animStart = performance.now()/1000 - pausedAt; e.target.textContent = '⏸'; }
+    else { pausedAt = (performance.now()/1000) - animStart; e.target.textContent = '▶'; }
+  });
+  document.getElementById('replay').addEventListener('click', () => {
+    animStart = performance.now()/1000; pausedAt = 0; playing = true;
+    document.getElementById('playPause').textContent = '⏸';
+  });
+  document.getElementById('orbit').addEventListener('click', e => {
+    orbit = !orbit;
+    e.target.textContent = orbit ? 'Orbit ✓' : 'Orbit';
+  });
+
+  // -------------------- RENDER LOOP --------------------
+  function resize(){
+    const w = window.innerWidth, h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    camera.aspect = w/h;
+    camera.updateProjectionMatrix();
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  function tick(){
+    requestAnimationFrame(tick);
+    const nowSec = performance.now()/1000;
+    const t = playing ? (nowSec - animStart) : pausedAt;
+    updateAnim(t);
+
+    if(orbit && !dragging && !userInteracted){
+      orbitState.angle += 0.0015;
+    } else if(dragging || userInteracted){
+      orbitState.angle = manualAngle;
+      orbitState.height = manualHeight;
+    }
+    setCameraFromOrbit();
+
+    renderer.render(scene, camera);
+  }
+  tick();
+
+  // Initial build of tubes so they don't pop in
+  syncEarpieces();
+  buildStethTubes();
+})();
+</script>
+</body>
+</html>
