@@ -2837,7 +2837,7 @@
         // Bookings recorded directly into the OPD HIS backend (Render-deployed).
         // Staff see new bookings under Reception → Online Bookings inside the HIS.
         // Update BOOKINGS_API_BASE to the HIS Render URL after first deploy.
-        const BOOKINGS_API_BASE = 'https://chandrawati-opd-his.onrender.com';
+        const BOOKINGS_API_BASE = 'https://site--backend--pj7dwlvyl857.code.run';
 
         function recordBooking(toEmail, toName, dept, date, phone, apptNum, slot, age) {
             return fetch(BOOKINGS_API_BASE + '/api/v1/online-bookings', {
