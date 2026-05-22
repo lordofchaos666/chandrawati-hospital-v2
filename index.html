@@ -3529,20 +3529,45 @@
         const BOOKINGS_API_BASE = 'https://site--backend--pj7dwlvyl857.code.run';
 
         function recordBooking(toEmail, toName, dept, date, phone, apptNum, slot, age) {
-            return fetch(BOOKINGS_API_BASE + '/api/v1/online-bookings', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    tokenNumber: apptNum,
-                    department: dept,
-                    patientName: toName,
-                    patientPhone: phone,
-                    patientEmail: toEmail || null,
-                    patientAge: age || null,
-                    appointmentDate: date,
-                    slot
-                })
-            }).catch(err => { console.error('booking record failed', err); });
+            // Fire-and-forget, but with a 12s timeout and one retry — covers a
+            // Northflank cold start (the free tier can return 503 on first hit)
+            // so a transient hiccup doesn't silently drop the HIS record.
+            var payload = JSON.stringify({
+                tokenNumber: apptNum,
+                department: dept,
+                patientName: toName,
+                patientPhone: phone,
+                patientEmail: toEmail || null,
+                patientAge: age || null,
+                appointmentDate: date,
+                slot: slot
+            });
+            function attempt(triesLeft) {
+                var ctrl = new AbortController();
+                var timer = setTimeout(function () { ctrl.abort(); }, 12000);
+                return fetch(BOOKINGS_API_BASE + '/api/v1/online-bookings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: payload,
+                    signal: ctrl.signal
+                }).then(function (res) {
+                    clearTimeout(timer);
+                    // Retry server errors (incl. cold-start 503); 4xx is final.
+                    if (res.status >= 500 && triesLeft > 0) {
+                        return new Promise(function (r) { setTimeout(r, 2000); })
+                            .then(function () { return attempt(triesLeft - 1); });
+                    }
+                    return res;
+                }).catch(function (err) {
+                    clearTimeout(timer);
+                    if (triesLeft > 0) {
+                        return new Promise(function (r) { setTimeout(r, 2000); })
+                            .then(function () { return attempt(triesLeft - 1); });
+                    }
+                    console.error('booking record failed', err);
+                });
+            }
+            return attempt(1);
         }
 
         function sendBrevoEmail(toEmail, toName, dept, date, phone, apptNum, slot) {
