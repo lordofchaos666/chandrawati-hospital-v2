@@ -3528,23 +3528,29 @@
         // Update BOOKINGS_API_BASE to the HIS Render URL after first deploy.
         const BOOKINGS_API_BASE = 'https://site--backend--pj7dwlvyl857.code.run';
 
-        function recordBooking(toEmail, toName, dept, date, phone, apptNum, slot, age) {
-            // Fire-and-forget, but with a 12s timeout and one retry — covers a
-            // Northflank cold start (the free tier can return 503 on first hit)
-            // so a transient hiccup doesn't silently drop the HIS record.
+        function recordBooking(toEmail, toName, dept, date, phone, age) {
+            // The HIS backend is the single source of truth: it assigns the
+            // token number and time slot. The caller AWAITS this — on success
+            // it resolves to the server booking record ({ token_number, slot,
+            // ... }); on failure it throws. No token is generated in the browser.
+            // 20s timeout + one retry covers a Northflank cold-start 503.
             var payload = JSON.stringify({
-                tokenNumber: apptNum,
                 department: dept,
                 patientName: toName,
                 patientPhone: phone,
                 patientEmail: toEmail || null,
                 patientAge: age || null,
-                appointmentDate: date,
-                slot: slot
+                appointmentDate: date
             });
+            function fail(message, userMessage, isFinal) {
+                var e = new Error(message);
+                if (userMessage) e.userMessage = userMessage;
+                e.isFinal = !!isFinal;   // final = don't retry (4xx / rejected)
+                return e;
+            }
             function attempt(triesLeft) {
                 var ctrl = new AbortController();
-                var timer = setTimeout(function () { ctrl.abort(); }, 12000);
+                var timer = setTimeout(function () { ctrl.abort(); }, 20000);
                 return fetch(BOOKINGS_API_BASE + '/api/v1/online-bookings', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -3552,25 +3558,37 @@
                     signal: ctrl.signal
                 }).then(function (res) {
                     clearTimeout(timer);
-                    // Retry server errors (incl. cold-start 503); 4xx is final.
-                    if (res.status >= 500 && triesLeft > 0) {
-                        return new Promise(function (r) { setTimeout(r, 2000); })
-                            .then(function () { return attempt(triesLeft - 1); });
+                    // 5xx (incl. cold-start) — retryable.
+                    if (res.status >= 500) {
+                        throw fail('server error ' + res.status, null, false);
                     }
-                    return res;
-                }).catch(function (err) {
+                    return res.json().catch(function () { return {}; }).then(function (body) {
+                        if (res.ok && body && body.success && body.data) {
+                            return body.data;            // { token_number, slot, ... }
+                        }
+                        var code = body && body.error && body.error.code;
+                        var userMsg;
+                        if (code === 'DEPARTMENT_FULL' || code === 'DUPLICATE_BOOKING') {
+                            userMsg = body.error.message;
+                        } else if (res.status === 429) {
+                            userMsg = 'Too many booking attempts. Please wait a few minutes and try again.';
+                        }
+                        throw fail('booking rejected (' + res.status + ')', userMsg, true);
+                    });
+                }, function (netErr) {
                     clearTimeout(timer);
-                    if (triesLeft > 0) {
-                        return new Promise(function (r) { setTimeout(r, 2000); })
-                            .then(function () { return attempt(triesLeft - 1); });
-                    }
-                    console.error('booking record failed', err);
+                    // Network drop or 20s timeout — retryable.
+                    throw fail(netErr && netErr.name === 'AbortError' ? 'timeout' : 'network error', null, false);
+                }).catch(function (err) {
+                    if (err.isFinal || triesLeft <= 0) throw err;
+                    return new Promise(function (r) { setTimeout(r, 2500); })
+                        .then(function () { return attempt(triesLeft - 1); });
                 });
             }
             return attempt(1);
         }
 
-        function sendBrevoEmail(toEmail, toName, dept, date, phone, apptNum, slot) {
+        function sendBrevoEmail(toEmail, toName, dept, date, phone, token, slot) {
             const htmlContent = `
                 <div style="font-family:Arial,sans-serif;max-width:520px;margin:0 auto;border:1px solid #e4e2dc;border-radius:10px;overflow:hidden;">
                     <div style="background:#0f2549;padding:24px 28px;">
@@ -3584,7 +3602,7 @@
                             <tr style="background:#f8f7f4;"><td style="padding:10px 14px;color:#8a8a95;font-weight:600;text-transform:uppercase;font-size:0.75rem;letter-spacing:0.06em;">Department</td><td style="padding:10px 14px;color:#1c1c1e;font-weight:600;">${dept}</td></tr>
                             <tr><td style="padding:10px 14px;color:#8a8a95;font-weight:600;text-transform:uppercase;font-size:0.75rem;letter-spacing:0.06em;">Date</td><td style="padding:10px 14px;color:#1c1c1e;font-weight:600;">${date}</td></tr>
                             <tr style="background:#f8f7f4;"><td style="padding:10px 14px;color:#8a8a95;font-weight:600;text-transform:uppercase;font-size:0.75rem;letter-spacing:0.06em;">Time Slot</td><td style="padding:10px 14px;color:#1c1c1e;font-weight:600;">${slot}</td></tr>
-                            <tr><td style="padding:10px 14px;color:#8a8a95;font-weight:600;text-transform:uppercase;font-size:0.75rem;letter-spacing:0.06em;">Token No.</td><td style="padding:10px 14px;color:#0e7490;font-weight:700;font-size:1.1rem;">#${apptNum}</td></tr>
+                            <tr><td style="padding:10px 14px;color:#8a8a95;font-weight:600;text-transform:uppercase;font-size:0.75rem;letter-spacing:0.06em;">Token No.</td><td style="padding:10px 14px;color:#0e7490;font-weight:700;font-size:1.1rem;">#${token}</td></tr>
                             <tr style="background:#f8f7f4;"><td style="padding:10px 14px;color:#8a8a95;font-weight:600;text-transform:uppercase;font-size:0.75rem;letter-spacing:0.06em;">Contact</td><td style="padding:10px 14px;color:#1c1c1e;">${phone}</td></tr>
                         </table>
                         <p style="color:#4a4a52;font-size:0.85rem;margin-top:16px;">Please arrive 10 minutes before your scheduled time slot.</p>
@@ -3604,8 +3622,8 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     toEmail, toName, dept, date, phone,
-                    apptNum, slot, htmlContent,
-                    subject: `Appointment Confirmed — ${dept} on ${date} | Token #${apptNum}`
+                    apptNum: token, slot, htmlContent,
+                    subject: `Appointment Confirmed — ${dept} on ${date} | Token #${token}`
                 })
             });
         }
@@ -3624,10 +3642,8 @@
 
         // --- PATIENT PORTAL ---
         const DB_KEY = 'chandrawati_patients_db';
-        // ── Booking constants ────────────────────────────────
-        const MAX_CAPACITY   = 60;   // max patients per dept per day
-        const MAX_PER_SLOT   = 10;   // patients per time slot
-        const OPD_SLOTS = ['10:00 AM–11:00 AM','11:00 AM–12:00 PM','12:00 PM–1:00 PM','2:00 PM–3:00 PM','3:00 PM–4:00 PM','4:00 PM–5:00 PM'];
+        // Token number, time slot and daily capacity are all decided by the
+        // HIS backend — there is intentionally no client-side token logic here.
 
         let currentUser = null;
         function getDB() { return JSON.parse(localStorage.getItem(DB_KEY)) || {}; }
@@ -3742,70 +3758,85 @@
         // Hospital WhatsApp number — change to your actual number
         const HOSPITAL_WA_NUMBER = '917779970332'; // format: countrycode + number, no +
 
-        function handleBookVisit() {
+        async function handleBookVisit() {
             const dept = document.getElementById('book-dept').value;
             const date = document.getElementById('book-date').value;
             const btn = document.getElementById('dash-book-btn');
             if (!dept || !date) { alert('Please select a department and date.'); return; }
-            let db = getDB();
-            let count = 0;
-            Object.values(db).forEach(p => p.visits.forEach(v => { if (v.date === date && v.dept === dept) count++; }));
-            if (count >= MAX_CAPACITY) { alert(`Fully booked. ${dept} has reached its daily limit of ${MAX_CAPACITY} appointments on ${date}.`); return; }
-            const apptNum = count + 1;
-            const slot = OPD_SLOTS[Math.min(Math.floor((apptNum - 1) / MAX_PER_SLOT), OPD_SLOTS.length - 1)];
+
             btn.innerHTML = 'Processing...';
             btn.disabled = true;
-            db[currentUser.phone].visits.push({ date, dept, status: 'Confirmed', token: apptNum, time: slot });
+
+            // Wait for the HIS backend — it assigns the token number and slot.
+            // Nothing is confirmed to the patient until the server responds.
+            let booking;
+            try {
+                booking = await recordBooking(
+                    currentUser.email, currentUser.name, dept, date, currentUser.phone, currentUser.age
+                );
+            } catch (err) {
+                btn.innerHTML = 'Confirm Booking';
+                btn.disabled = false;
+                alert(
+                    (err && err.userMessage) ||
+                    'We could not confirm your booking right now. Please check your internet connection and try again, or call +91 77799 70332.'
+                );
+                return;
+            }
+
+            // Server-assigned, authoritative values — used everywhere below.
+            const token = booking.token_number;
+            const slot  = booking.slot;
+
+            // Cache in the local visit history (display only — not a token source).
+            let db = getDB();
+            db[currentUser.phone].visits.push({ date, dept, status: 'Confirmed', token: token, time: slot });
             saveDB(db);
             currentUser = db[currentUser.phone];
 
-            recordBooking(currentUser.email, currentUser.name, dept, date, currentUser.phone, apptNum, slot, currentUser.age);
+            // Send the confirmation email with the SAME server token + slot.
+            let emailOk = true;
+            try {
+                await sendBrevoEmail(currentUser.email, currentUser.name, dept, date, currentUser.phone, token, slot);
+            } catch (e) {
+                emailOk = false;
+            }
+            const emailEl = document.getElementById('confirm-email');
+            if (emailOk) {
+                emailEl.textContent = currentUser.email;
+                emailEl.style.color = 'var(--teal)';
+            } else {
+                emailEl.textContent = 'Email could not be sent — please note your token number below.';
+                emailEl.style.color = '#b45309';
+            }
 
-            sendBrevoEmail(currentUser.email, currentUser.name, dept, date, currentUser.phone, apptNum, slot)
-            .then(
-                () => {
-                    const el = document.getElementById('confirm-email');
-                    el.textContent = currentUser.email;
-                    el.style.color = 'var(--teal)';
-                    el.closest('p').querySelector('span.email-status-msg') && (el.closest('p').querySelector('span.email-status-msg').textContent = '');
-                },
-                () => {
-                    const el = document.getElementById('confirm-email');
-                    el.textContent = 'Email could not be sent — please note your token number above.';
-                    el.style.color = '#b45309';
-                }
-            ).finally(() => {
-                // Email confirmation (fallback label already set above)
-                document.getElementById('confirm-email').textContent || (document.getElementById('confirm-email').textContent = currentUser.email);
+            // Booking summary box
+            document.getElementById('booking-summary').innerHTML =
+                `<strong>Patient:</strong> ${currentUser.name}<br>
+                 <strong>Department:</strong> ${dept}<br>
+                 <strong>Date:</strong> ${date}<br>
+                 <strong>Time Slot:</strong> ${slot}<br>
+                 <strong>Token No.:</strong> #${token}`;
 
-                // Booking summary box
-                document.getElementById('booking-summary').innerHTML =
-                    `<strong>Patient:</strong> ${currentUser.name}<br>
-                     <strong>Department:</strong> ${dept}<br>
-                     <strong>Date:</strong> ${date}<br>
-                     <strong>Time Slot:</strong> ${slot}<br>
-                     <strong>Token No.:</strong> #${apptNum}`;
+            // Build WhatsApp message with the same server token
+            const waMsg = encodeURIComponent(
+                `*Chandrawati Hospital — Appointment Confirmed*\n\n` +
+                `Patient: ${currentUser.name}\n` +
+                `Department: ${dept}\n` +
+                `Date: ${date}\n` +
+                `Time Slot: ${slot}\n` +
+                `Token No.: #${token}\n\n` +
+                `📍 GT Road, Barwadda, Dhanbad — 826004\n` +
+                `📞 +91 77799 70332`
+            );
+            document.getElementById('wa-link').href = `https://wa.me/${HOSPITAL_WA_NUMBER}?text=${waMsg}`;
 
-                // Build WhatsApp message
-                const waMsg = encodeURIComponent(
-                    `*Chandrawati Hospital — Appointment Confirmed*\n\n` +
-                    `Patient: ${currentUser.name}\n` +
-                    `Department: ${dept}\n` +
-                    `Date: ${date}\n` +
-                    `Time Slot: ${slot}\n` +
-                    `Token No.: #${apptNum}\n\n` +
-                    `📍 GT Road, Barwadda, Dhanbad — 826004\n` +
-                    `📞 +91 77799 70332`
-                );
-                document.getElementById('wa-link').href = `https://wa.me/${HOSPITAL_WA_NUMBER}?text=${waMsg}`;
-
-                document.getElementById('bookingModal').style.display = 'flex';
-                btn.innerHTML = 'Confirm Booking';
-                btn.disabled = false;
-                document.getElementById('book-dept').value = '';
-                document.getElementById('book-date').value = '';
-                renderHistory();
-            });
+            document.getElementById('bookingModal').style.display = 'flex';
+            btn.innerHTML = 'Confirm Booking';
+            btn.disabled = false;
+            document.getElementById('book-dept').value = '';
+            document.getElementById('book-date').value = '';
+            renderHistory();
         }
         // ============ NEW PEDIATRIC SCENE — cursor parallax ============
         (function initPediatricScene() {
