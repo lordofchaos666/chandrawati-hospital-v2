@@ -3523,17 +3523,37 @@
         // API key is stored securely in a Cloudflare Worker (server-side proxy)
         // See SETUP.md for deployment instructions
         const EMAIL_PROXY_URL = 'https://chandrawati-email.drritikchandra.workers.dev';
-        // Bookings recorded directly into the OPD HIS backend (Render-deployed).
-        // Staff see new bookings under Reception → Online Bookings inside the HIS.
-        // Update BOOKINGS_API_BASE to the HIS Render URL after first deploy.
+        // Bookings recorded directly into the OPD HIS backend (Northflank).
+        // Staff see new bookings under Reception → Online Appointment in the HIS.
         const BOOKINGS_API_BASE = 'https://site--backend--pj7dwlvyl857.code.run';
+
+        // RFC 4122 v4 UUID — uses crypto.randomUUID when available (always on
+        // HTTPS) with a Math.random fallback for older browsers. Same shape
+        // either way so the backend's z.string().uuid() accepts both.
+        function uuidv4() {
+            if (window.crypto && typeof crypto.randomUUID === 'function') {
+                return crypto.randomUUID();
+            }
+            return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+                var r = Math.random() * 16 | 0;
+                var v = c === 'x' ? r : (r & 0x3 | 0x8);
+                return v.toString(16);
+            });
+        }
 
         function recordBooking(toEmail, toName, dept, date, phone, age) {
             // The HIS backend is the single source of truth: it assigns the
             // token number and time slot. The caller AWAITS this — on success
             // it resolves to the server booking record ({ token_number, slot,
             // ... }); on failure it throws. No token is generated in the browser.
+            //
+            // IDEMPOTENCY: a stable UUID is generated once and sent on every
+            // retry of this attempt. If the first POST timed out client-side
+            // but actually committed on the server, the retry returns the
+            // *original* booking — no duplicate row, same token to the patient.
+            //
             // 20s timeout + one retry covers a Northflank cold-start 503.
+            var idemKey = uuidv4();
             var payload = JSON.stringify({
                 department: dept,
                 patientName: toName,
@@ -3553,7 +3573,10 @@
                 var timer = setTimeout(function () { ctrl.abort(); }, 20000);
                 return fetch(BOOKINGS_API_BASE + '/api/v1/online-bookings', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Idempotency-Key': idemKey
+                    },
                     body: payload,
                     signal: ctrl.signal
                 }).then(function (res) {
@@ -3616,7 +3639,9 @@
                     </div>
                 </div>`;
 
-            // Call the secure proxy worker — API key never touches the browser
+            // Call the secure proxy worker — API key never touches the browser.
+            // Reject on non-2xx so callers can tell a successful send from a
+            // server-side failure; bare fetch only rejects on network errors.
             return fetch(EMAIL_PROXY_URL, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -3625,6 +3650,9 @@
                     apptNum: token, slot, htmlContent,
                     subject: `Appointment Confirmed — ${dept} on ${date} | Token #${token}`
                 })
+            }).then(function (res) {
+                if (!res.ok) throw new Error('email proxy ' + res.status);
+                return res;
             });
         }
 
@@ -3788,8 +3816,27 @@
             const token = booking.token_number;
             const slot  = booking.slot;
 
+            // HTML-escape helper for any patient-supplied value that gets
+            // dropped into innerHTML below. Defence in depth — there's no
+            // cross-user vector (localStorage is per-device) but a name with
+            // angle brackets should still render as text.
+            const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({
+                '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+            }[c]));
+
             // Cache in the local visit history (display only — not a token source).
+            // Guard against localStorage being cleared mid-session — without this
+            // a successful server booking would crash the UI on the line below.
             let db = getDB();
+            if (!db[currentUser.phone]) {
+                db[currentUser.phone] = {
+                    name:  currentUser.name,
+                    phone: currentUser.phone,
+                    age:   currentUser.age,
+                    email: currentUser.email,
+                    visits: [],
+                };
+            }
             db[currentUser.phone].visits.push({ date, dept, status: 'Confirmed', token: token, time: slot });
             saveDB(db);
             currentUser = db[currentUser.phone];
@@ -3810,13 +3857,15 @@
                 emailEl.style.color = '#b45309';
             }
 
-            // Booking summary box
+            // Booking summary box — every patient-supplied value goes through
+            // esc(); dept/date/slot/token are server- or select-controlled but
+            // escaping them too keeps this safe under any future change.
             document.getElementById('booking-summary').innerHTML =
-                `<strong>Patient:</strong> ${currentUser.name}<br>
-                 <strong>Department:</strong> ${dept}<br>
-                 <strong>Date:</strong> ${date}<br>
-                 <strong>Time Slot:</strong> ${slot}<br>
-                 <strong>Token No.:</strong> #${token}`;
+                `<strong>Patient:</strong> ${esc(currentUser.name)}<br>
+                 <strong>Department:</strong> ${esc(dept)}<br>
+                 <strong>Date:</strong> ${esc(date)}<br>
+                 <strong>Time Slot:</strong> ${esc(slot)}<br>
+                 <strong>Token No.:</strong> #${esc(token)}`;
 
             // Build WhatsApp message with the same server token
             const waMsg = encodeURIComponent(
